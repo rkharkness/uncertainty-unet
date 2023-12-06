@@ -1,20 +1,11 @@
-from utils import bbox
-from utils import draw_bbox
-
 from  torch.utils.data import Dataset
-from torchvision.utils import make_grid
 import cv2
 import torch
 import pydicom
 
 import numpy as np
-
 import albumentations as A
-import albumentations.augmentations.functional as F
 from albumentations.pytorch import ToTensorV2
-from torch.utils.data.dataloader import default_collate
-############################# Dataloaders ###########################
-
 
 class CustomDataLoader(Dataset):
     def __init__(self, df, transforms=None):
@@ -72,6 +63,20 @@ class TestDataLoader(Dataset):
         label = torch.unsqueeze(label, 0)
                 
         return image, label
+
+    def __len__(self):
+        return len(self.df)
+    
+
+class SegDataLoader(Dataset):
+    def __init__(self, df):
+        self.df = df
+
+    def __getitem__(self, index):
+        img_path = self.df['cxr_path'][index]
+        label = self.df['xray_status'][index]
+
+        return img_path, label
 
     def __len__(self):
         return len(self.df)

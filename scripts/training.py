@@ -1,10 +1,7 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-
-from unet import VGGNestedUNet, DiceBCELoss
-from utils import iou_score, dice2D, bbox, dice_coef
-
+from utils.metrics import iou_score, dice_coef
 from torchvision.utils import make_grid
 
 from tqdm import tqdm

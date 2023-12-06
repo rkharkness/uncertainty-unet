@@ -85,7 +85,6 @@ seg_check*
 # MACOS
 .DS_Store
 
-
 lung-seg-postprocessing-examples/
 test-postprocessing-examples/
 uncertainty-results/

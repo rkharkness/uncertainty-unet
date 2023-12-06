@@ -5,8 +5,12 @@ import numpy as np
 import itertools
 from functools import reduce
 import cv2
-import copy
 from mpl_toolkits import axes_grid1
+import pydicom
+from scipy.stats import entropy
+
+
+############################# Define Visualisation Tools  ###########################
 
 def add_colorbar(im, aspect=20, pad_fraction=0.5, **kwargs):
     """
@@ -21,11 +25,9 @@ def add_colorbar(im, aspect=20, pad_fraction=0.5, **kwargs):
     plt.sca(current_ax)
     return im.axes.figure.colorbar(im, cax=cax, **kwargs)
 
-
 def dice2D(a,b):
     #https://stackoverflow.com/questions/31273652/how-to-calculate-dice-coefficient-for-measuring-accuracy-of-image-segmentation-i
     #https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient
-
     intersection = np.sum(a[b==1])
     dice = (2*intersection)/(np.sum(a)+np.sum(b))
     if (np.sum(a)+np.sum(b))==0: #black/empty masks
@@ -55,18 +57,17 @@ def bbox(img, input='prediction'):
     args:
         img: image as open-cv numpy array
          input=mask: str arg - mask or prediction"""
-#    print(np.shape(img))
+
     if input == 'mask':
         a = np.where(np.array(img) == np.max(np.array(img)))
 
     elif input == 'prediction':
         a = np.where(np.array(img) >= 0.5)
- #   print('a0',a[0],np.shape(a))
+
     bbox = np.min(a[1]), np.max(a[1]), np.min(a[0]), np.max(a[0]) # extract coords - xmin, xmax, ymin, ymax
     return bbox
 
 def draw_bbox(bbox_coords):
-    print(bbox_coords)
     bbox_mask = np.zeros((480,480), np.float32)
     xmin, xmax, ymin, ymax = bbox_coords
     bbox_mask[ymin:ymax,xmin:xmax] = 1
@@ -82,7 +83,6 @@ def visualize_bbox(img, bbox, color=(201, 58, 64), thickness=5):  #https://www.k
     """
 
     # draw bbox on img
- #   img = copy.deepcopy(img)
     xmin, xmax, ymin, ymax = bbox
     xmin, ymin, xmax, ymax = int(xmin), int(ymin), int(xmax), int(ymax)
     cv2.rectangle(img, (xmin, ymin), (xmax, ymax), color=color, thickness=thickness)
@@ -127,15 +127,12 @@ def plot_img_array(img_array, idx, model_num, ncol=5, img_class=None):
 
 def plot_side_by_side(img_arrays, idx, model_num, img_class=None):
     flatten_list = reduce(lambda x,y: x+y, zip(*img_arrays))
-    print(np.array(flatten_list).shape)
-
     plot_img_array(np.array(flatten_list),idx, model_num, ncol=len(img_arrays), img_class=img_class)
 
 def plot_errors(results_dict, title):
     markers = itertools.cycle(('+', 'x', 'o'))
 
     plt.title('{}'.format(title))
-
     for label, result in sorted(results_dict.items()):
         plt.plot(result, marker=next(markers), label=label)
         plt.ylabel('dice_coef')
@@ -150,7 +147,6 @@ def masks_to_colorimg(masks):
     colorimg = np.ones((masks.shape[1], masks.shape[2], 3), dtype=np.float32) * 255
     channels, height, width = masks.shape
 
-
     for y in range(height):
         for x in range(width):
             selected_colors = colors[masks[:,y,x] > 0.5]
@@ -160,37 +156,23 @@ def masks_to_colorimg(masks):
 
     return colorimg.astype(np.float32)/np.max(colorimg)
 
-############################# Define Loss & Metrics ###########################
 
-def iou_score(output, target):
-    smooth = 1e-5
+def seg_checker(path, test):
+    print('checking segmentation ...')
+    if test == "nccid":
+        ds = pydicom.dcmread(path)
+        arr  = ds.pixel_array
+#       
+    arr = arr/np.max(arr.flatten())
 
-    if torch.is_tensor(output):
-        output = torch.sigmoid(output).data.cpu().numpy()
-    if torch.is_tensor(target):
-        target = target.data.cpu().numpy()
-    output_ = output > 0.5
-    target_ = target > 0.5
-    intersection = (output_ & target_).sum()
-    union = (output_ | target_).sum()
+    plt.figure()
+    plt.imshow(arr)
+    plt.savefig(f"/MULTIX/DATA/scripts/uncertainty_unet/seg_check_{test}.png",cmap='grey')
+    plt.figure()
+    plt.hist(arr.flatten())
+    plt.savefig(f"/MULTIX/DATA/scripts/uncertainty_unet/seg_check_hist_{test}.png")
 
-    return (intersection + smooth) / (union + smooth)
-
-
-def dice_coef(output, target, sigmoid=True):
-    smooth = 1e-5
-    # output = torch.sigmoid(output).view(-1).data.cpu().numpy()
-    if sigmoid == True:
-      output = torch.sigmoid(output).view(-1)
-    else:
-      output = output.view(-1)
-      
-    target = target.view(-1)
-    # target = target.view(-1).data.cpu().numpy()
-    intersection = (output * target).sum()
-
-    return (2. * intersection + smooth) / \
-        (output.sum() + target.sum() + smooth)
-
-def dice_coef_loss(output, target):
-	return 1. - dice_coef(output, target)
+def prediction_checker(img, idx):
+    plt.figure()
+    plt.imshow(img.transpose(1,2,0))
+    plt.savefig(f"/MULTIX/DATA/HOME/covid-19-benchmarking/uncertainty_unet/pred_check{idx}.png")

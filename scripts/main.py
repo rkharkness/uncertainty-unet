@@ -12,8 +12,6 @@ from dataloaders import CustomDataLoader, create_dataloader
 from unet import VGGNestedUNet, DiceBCELoss
 from training import train
 
-from torchvision.utils import make_grid
-
 if __name__ == "__main__":
     
     full_data = pd.read_csv("/MULTIX/DATA/HOME/COVID_QU_Ex/covid_qu_ex.csv")
@@ -42,19 +40,7 @@ if __name__ == "__main__":
       model = VGGNestedUNet(num_classes=1, deep_supervision_status=True)
       model = model.to(device)
       
-      batch_x, batch_y = next(iter(train_loader))
-      grid_img = make_grid(batch_x, nrow=4)
-      plt.imshow(grid_img.permute(1, 2, 0))
-      plt.savefig('/MULTIX/DATA/HOME/covid-19-benchmarking/uncertainty_unet/batch_cxr.png')
-      
-      print(np.max(np.array(batch_y)))
-      batch_y = batch_y * 255
-      grid_img = make_grid(batch_y, nrow=4)
-      plt.imshow(grid_img.permute(1, 2, 0))
-      plt.savefig('/MULTIX/DATA/HOME/covid-19-benchmarking/uncertainty_unet/batch_masks.png')
-      
       optimizer_ft = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
-
       scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_ft,  mode='min', factor=0.9, patience=5, threshold=1e-10, 
                                                            threshold_mode='rel', cooldown=0, min_lr=1e-10, eps=1e-08, verbose=True)
 
