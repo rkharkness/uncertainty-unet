@@ -82,7 +82,13 @@ target/
 seg_check*
 *.drawio
 
+# MACOS
+.DS_Store
+
+
 lung-seg-postprocessing-examples/
+test-postprocessing-examples/
+uncertainty-results/
 
 # IPython
 profile_default/

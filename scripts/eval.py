@@ -9,38 +9,33 @@ import time
 
 from matplotlib import ticker
 
-from unet import VGGNestedUNet, DiceBCELoss
-
+from unet import VGGNestedUNet
 from dataloaders import CustomDataLoader, TestDataLoader, create_dataloader
 
-from utils import dice2D, add_colorbar, dice_coef, bbox, draw_bbox
+from utils import dice_coef, bbox, draw_bbox
 
 import diptest
 import cv2
 
-plt.style.use(['science','nature'])
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+
 
 # component analysis - open cv https://pyimagesearch.com/2021/02/22/opencv-connected-component-labeling-and-analysis/
 def iou_bin_(mask1, mask2):
-    print(np.unique(np.array(mask1), return_counts=True))
-    print(np.unique(np.array(mask2), return_counts=True))
     intersection = (mask1 * mask2).sum()
     if intersection == 0:
         return 0.0
     union = torch.logical_or(mask1, mask2).to(torch.int).sum()
     return intersection / union
-# identify > 2 components
-# eliminate component with greatest uncertainty
+
+
 def component_analysis(x, uncertainty_map):
- #   x = copy.deepcopy(x)
-    #uncertainty_map = uncertainty_map.copy()
     x = (x * 255).astype(np.uint8)
 
     numLabels, labels,stats, centroids = cv2.connectedComponentsWithStats(x, 127., cv2.CV_32S)
 
     for j in range(1,numLabels - 2):
-  #        x = x.copy()
-   #       uncertainty_map = uncertainty_map.copy()
           # loop over the number of unique connected component labels
           numLabels, labels,stats, centroids = cv2.connectedComponentsWithStats(x, 127. ,cv2.CV_32S)
   
@@ -76,18 +71,15 @@ def component_analysis(x, uncertainty_map):
 
 # hartigans dip test
 def test_bimodal(x, unc_threshold): # input prediction uncertainty array
-    # both the dip statistic and p-value
     x = x.flatten()
     dip, pval = diptest.diptest(x)
     total_uncertainty  = np.sum(x) 
 
-    if dip < 0.05: #0.1?
+    if dip < 0.05:
         bimodal = True
     else:
         bimodal = False
         
-#    print(bimodal)
-
     if bimodal == True and total_uncertainty > unc_threshold:
         reject = True
     else:
@@ -99,10 +91,6 @@ def test_bimodal(x, unc_threshold): # input prediction uncertainty array
 # and values greater than .05 but less than .10 suggesting bimodality with marginal significance".
 
 def post_processing(x, uncertainty_map, unc_threshold):
-#    x = copy.deepcopy(x)
-    #uncertainty_map = copy.deepcopy(uncertainty_map)
-    print(test_bimodal(uncertainty_map, unc_threshold))
-
     if test_bimodal(uncertainty_map, unc_threshold)==True:
         x = np.ones((480,480,1))
         skip = True
@@ -111,7 +99,6 @@ def post_processing(x, uncertainty_map, unc_threshold):
         x, uncertainty_map = component_analysis(x, uncertainty_map)
         skip = False
 
-        
     return x, uncertainty_map, skip
 
 
@@ -120,9 +107,8 @@ def unsupervised_eval(model, test_loader, unc_threshold, do_post_processing=True
         i = 0
         for data in tqdm(test_loader):
             i = i + 1
-            image, gt = data #img, class
+            image, gt = data
             image = image.cuda()
-            print(image.shape)
 
             if do_post_processing:
                 raw_pred, pred, aleatoric, epistemic, entropy, mi, variance = inference(model, image[0], gt[0], supervised=False, N=10)
@@ -212,7 +198,6 @@ def model_eval(model, test_loader, unc_threshold, do_post_processing=False):
                 gt_roi = torch.tensor(draw_bbox(bbox(gt.detach().cpu().numpy()[0][0])))
 
                 processed_pred, processed_uncertainty, skip = post_processing(pred, epistemic, unc_threshold)
-              #  print(np.unique(processed_pred, return_counts=True))             
                 pred_roi = torch.tensor(draw_bbox(bbox(processed_pred)))
                 pred = torch.tensor(raw_pred)
                 gt = gt.detach().cpu()
@@ -223,7 +208,6 @@ def model_eval(model, test_loader, unc_threshold, do_post_processing=False):
                 pred = torch.sigmoid(pred)
                 pred = torch.where(pred > 0.5, 1, 0)    
                 gt = torch.where(gt >= 0.5, 1, 0)     
-                #print('bbox g', bbox(gt.detach().cpu().numpy()[0][0]))      
                 pred_roi = torch.tensor(draw_bbox(bbox(pred.detach().cpu().numpy()[0])))
                 gt_roi = torch.tensor(draw_bbox(bbox(gt.detach().cpu().numpy()[0][0])))
             
@@ -248,7 +232,7 @@ def model_eval(model, test_loader, unc_threshold, do_post_processing=False):
         
 
 
-def Entropy(X, axis=-1):
+def entropy(X, axis=-1):
     '''
     Helper function to compute entropy: all uncertainty metrics computed in calc_Uncertainty()
     '''
@@ -256,13 +240,13 @@ def Entropy(X, axis=-1):
     return -1* np.sum(X * np.log(X+1e-12), axis=axis)
   
 # calculate uncertainty metrics
-def calc_Uncertainty(preds):
+def calc_uncertainty(preds):
     # calculate mean
     mean_preds = np.mean(preds, axis=0)
     # calculate entropy
-    entropy=Entropy(np.mean(preds, axis=0),axis=-1)
+    entropy=entropy(np.mean(preds, axis=0),axis=-1)
     # Expected entropy of the predictive under the parameter posterior
-    entropy_exp = np.mean(Entropy(preds, axis=0))
+    entropy_exp = np.mean(entropy(preds, axis=0))
     # calculate mutual info
     mutual_info = entropy - entropy_exp  # Equation 2 of https://arxiv.org/pdf/1711.08244.pdf
     # calculate variance
@@ -318,11 +302,10 @@ def inference(model, image, y_true, supervised=True, N=10):
 
     preds = np.array(preds)
     preds_n = torch.tensor(preds).permute(0,2,3,1).cpu().numpy()
-    #y_true = torch.tensor(y_true).permute(0,2,3,1).cpu().numpy()
-   # image = torch.tensor(image).permute(0,2,3,1).cpu().numpy()
+
 
     # calculate the uncertainty metrics
-    prediction, entropy, mutual_info, variance, aleatoric, epistemic, overall = calc_Uncertainty(preds_n)
+    prediction, entropy, mutual_info, variance, aleatoric, epistemic, overall = calc_uncertainty(preds_n)
     
     pred=model(image)[-1][0]
     # calculate the accuracy metrics
@@ -354,10 +337,10 @@ if __name__ == "__main__":
     parser.add_argument('--n_test', default=20)
     parser.add_argument('--test', default=None, type=str, help='Choose on of: [ltht, nccid_test, nccid_val, nccid_leeds, chexpert, custom]')
     parser.add_argument('--uncertainty_threshold', type=int)
+    parser.add_argument('--root', default='/MULTIX/DATA/HOME/covid-19-benchmarking/uncertainty_unet/', type=str, help='Path to working dir')
     args = parser.parse_args()
 
     model = VGGNestedUNet(num_classes=1, deep_supervision=True).cuda()
-    
     model.load_state_dict(torch.load("/MULTIX/DATA/HOME/mcd_vgg_nested_unet_cxr_1.pth"))
 
     full_data = pd.read_csv(args.data_csv)
@@ -369,40 +352,28 @@ if __name__ == "__main__":
         test_data=test_data.reset_index(drop=True)
         test_loader = create_dataloader(bs=50, custom_dataloader=CustomDataLoader, dataframe=test_data, train=False, num_workers=0)
     
-        x, y = next(iter(test_loader))
-        
-        n = np.random.randint(0, x.shape[0])
-        fig, ax = plt.subplots(1,2)
-        ax[0].imshow(x[n][0])
-        ax[1].imshow(np.squeeze(y[n][0]))
-        for a in ax: a.axis('off')
-        plt.savefig("/MULTIX/DATA/HOME/covid-19-benchmarking/uncertainty_unet/test_input_example.png")
-        # save
-        
-        x = x.cuda()
-        y = y.cuda()
+        x, y = next(iter(test_loader))  
+        x_predict = x.cuda()
+        y_predict = y.cuda()
     
-        X_predict, Y_predict = x, y
         num = 20
         plt.rcParams['image.cmap'] = 'gray'
-        import matplotlib.gridspec as gridspec
 
         for i in range(num):
-            sample = np.random.randint(0,len(X_predict))
-            image = X_predict[sample]
-            true  = Y_predict[sample]
+            sample = np.random.randint(0, len(x_predict))
+            image = x_predict[sample]
+            true  = y_predict[sample]
             
             raw_pred, prediction, aleatoric, epistemic, entropy, mi, variance, error, scores = inference(model, image, true , N=10)
 
             pred_bbox = draw_bbox(bbox(prediction))
-
             gt_bbox = draw_bbox(bbox(true.detach().cpu().numpy()[0]))
 
             processed_prediction, processed_uncertainty, skip = post_processing(prediction, epistemic, 500)
             processed_roi = draw_bbox(bbox(processed_prediction))
 
             true = np.squeeze(true)
-                
+            
             n = np.random.randint(0,num)
             fig, ax = plt.subplots(3,3,figsize=(20,10))
 
@@ -453,9 +424,9 @@ if __name__ == "__main__":
 
         
         for i in range(num):
-            sample = np.random.randint(0,len(X_predict))
-            image = X_predict[sample]
-            true  = Y_predict[sample]
+            sample = np.random.randint(0,len(x_predict))
+            image = x_predict[sample]
+            true  = y_predict[sample]
             
             raw_pred, prediction, aleatoric, epistemic, entropy, mi, variance, error, scores = inference(model, image, true , N=10)
             true = np.squeeze(true)
